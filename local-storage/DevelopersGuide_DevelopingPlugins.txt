@@ -1,0 +1,311 @@
+[[PageOutline(1-10,Table of Contents)]]
+
+= Developing Plugins =
+
+This page gives a short introduction for developers how to create, deploy and develop plugins for JOSM.
+
+The following instructions show the most widely used setup for Plugins (Ant build, versioned in [source:osm/applications/editors/josm/plugins/ SVN]). An alternative option is using Maven, which is available for most plugins as second build system.
+You can choose either method to build, depending on what you prefer, even setting up both build systems on one project is possible. However if you want to put your plugin into the SVN repo for JOSM plugins, it's generally preferred to use the Ant build described below.
+
+
+== Setting up the environment ==
+ * Check out the plugin environment into an empty directory called {{{josm}}}. Make sure path contains only ASCII characters, otherwise build may fail.
+{{{
+svn co https://josm.openstreetmap.de/osmsvn/applications/editors/josm
+}}}
+ * If the old URL https://svn.openstreetmap.org/applications/editors/josm is used, then go to the working copy and call {{{svn relocate}}} with the new URL.
+ * Create a new plugin directory {{{josm/plugins/yourpluginname}}}. You may create a copy of the template directory [source:osm/applications/editors/josm/plugins/00_plugin_dir_template/ 00_plugin_dir_template]. It includes a directory layout, two GPL licenses ([source:osm/applications/editors/josm/plugins/00_plugin_dir_template/GPL-v2.0.txt GPL2] and [source:osm/applications/editors/josm/plugins/00_plugin_dir_template/GPL-v3.0.txt GPL3]) but no license file like [source:/trunk/LICENSE JOSM core] (see [#LegalStuff Legal Stuff] below) and a template for the [source:osm/applications/editors/josm/plugins/00_plugin_dir_template/build.xml build.xml].
+ * Open the ant script ({{{build.xml}}}) in your plugin directory and configure the properties in the configuration section. The important thing of your build script is, that it places some attributes into the {{{MANIFEST.MF}}} of the jar file. See below. {{{build.xml}}} in the template directory takes care of this.
+ * [source:osm/applications/editors/josm/plugins/00_plugin_dir_template/README.template This readme] explains how your plugin is built and made available to other JOSM users. 
+
+
+== Building JOSM core ==
+A binary version of JOSM core is required for building a plugin. This is how you compile it yourself:
+{{{
+cd josm/core
+ant
+}}}
+It will create the file `josm/core/dist/josm-custom.jar`. Alternatively you download a release (latest or tested) and move the .jar file to this location.
+
+
+== Building ==
+Call ant to build the plugin :
+{{{
+cd josm/plugins/yourpluginname
+ant clean
+ant dist
+}}}
+
+
+== Testing ==
+Copy the JAR file to the .josm directory : 
+{{{
+cp dist/PicLayer.jar ~/.local/share/JOSM/plugins/
+}}}
+
+On OS X, this will be `$HOME/Library/JOSM/plugins`.
+
+And start josm as usual.
+
+{{{#!html
+<table cellspacing="0" cellpadding="7"  border="1">
+<tr style="background-color:#cfc"><td><span style="font-size:110%">Note to svn committers: Please read the section <b>Publishing the new plugin</b> below carefully.</span><br>(This is counter intuitive and easy to forget, but the plugin deployment<br>system relies on correct svn version numbers in the plugin manifest file.)
+</td></tr>
+</table>
+}}}
+
+
+== Debugging (using Eclipse) ==
+If you need to debug a plugin, it can easily be done using Eclipse:
+
+1. Import your plugin as an existing project in Eclipse
+1. Either
+ a. Import the JOSM project to the same workspace and add it as a required project on the build path (your extension -> Properties -> Java Build Path -> Projects -> Add). Or
+ a. Open your project properties to add required libraries (Properties -> Java Build Path -> Libraries -> Add External JARs). You must at least add `josm/core/dist/josm-custom.jar`, but you may also add your plugin dependencies if any (for instance `josm/dist/utilsplugin2.jar`).
+1. Make sure the plugin is added to the `plugins` list in the [wiki:/Help/Preferences/Advanced Advanced preferences] in JOSM and copy any version of your extension to the plugin directory (essentially, only the entry point is relevant here, so `plugin.class` has to be set correctly).
+1. Create a `Run Configuration` (Properties -> Run/Debug Settings -> New -> Java Application). Main class must be set to `org.openstreetmap.josm.gui.MainApplication`.
+1. You can now tweak your plugin and/or set breakpoints… etc.
+
+
+== Automated testing ==
+To add new unit tests, look at the folder "test" of these existing plugins:
+* opendata
+* turnrestrictions
+* alignways
+* elevation
+* graphview
+* wikipedia
+
+Make sure to set the SVN properties (externals and ignore)!
+
+Then add your plugin to the list of tests being run in the common build file:
+[source:osm/applications/editors/josm/plugins/build.xml Plugins build.xml]
+
+It will then be run automatically in the Jenkins build, see:
+[/jenkins/job/JOSM-Plugins/lastCompletedBuild/testReport/ Test Report]
+
+In short, use latest JUnit whenever possible and utilize `josm-unittest.jar`:
+
+{{{#!xml
+<dependency>
+  <groupId>org.openstreetmap.josm</groupId>
+  <artifactId>josm-unittest</artifactId>
+  <version>SNAPSHOT</version>
+</dependency>
+}}}
+
+
+== JOSM plugins ==
+=== A POJO as entry point ===
+The entry point for a JOSM plugin, the '''plugin main class''' is a Plain Old Java Object (POJO) which provides a constructor with one parameter of type [source:/trunk/src/org/openstreetmap/josm/plugins/PluginInformation.java PluginInformation]. 
+
+{{{
+#!java
+  public class MyPlugin {
+     /**
+      * Will be invoked by JOSM to bootstrap the plugin
+      *
+      * @param info  information about the plugin and its local installation    
+      */
+      public MyPlugin(PluginInformation info) {
+      }
+
+      /* ... */
+  }
+}}}
+
+You don't have to derive the plugin main class from a common superclass but currently you are '''recommended''' to derive it from [source:/trunk/src/org/openstreetmap/josm/plugins/Plugin.java org.openstreetmap.josm.plugins.Plugin]. 
+
+{{{
+#!java
+  import org.openstreetmap.josm.plugins.Plugin;
+  import org.openstreetmap.josm.plugins.PluginInformation;
+
+  public class MyPlugin extends Plugin {
+  
+     /**
+      * Will be invoked by JOSM to bootstrap the plugin
+      *
+      * @param info  information about the plugin and its local installation    
+      */
+      public MyPlugin(PluginInformation info) {
+         super(info);
+         // init your plugin 
+      }
+  }
+}}}
+
+=== Naming the plugin ===
+Each plugin has a unique name to identify it. The name is a short identifier like {{{wmsplugin}}} or {{{validator}}}. 
+  * '''DONT''' use white space characters in the name. Call the plugin {{{BuildingUtility}}}, not {{{Jim's Building Utilities}}}
+  * '''DONT''' use special characters in the plugin name, stick to alphanumeric characters. Call the plugin {{{routing4all}}} not {{{routing 4 all :-) !}}}. Note that the plugin name is used to '''create file and directory names''' on the computer where plugins are installed. If it included special characters like /, ., \, etc. these operations may fail. 
+
+You should use a Java package for the plugin main class and all other classes you need in the plugin, i.e. {{{org.foo.bar.routing4all}}}. Stick to the well-established naming conventions used in the Java world (lower case package name, camel case class names, etc.). Put the plugin code including the plugin main class '''in its own package'''. This allows JOSM to identify and temporarily disable a plugin which has thrown an exception.
+
+In short
+ * choose a short plugin name {{{apluginame}}}
+ * declare a unique Java package {{{foo.bar.apluginame}}}
+ * implement a plugin main class {{{foo.bar.apluginame.APluginName}}} 
+
+=== The plugin interface ===
+The plugin main class neither has to be derived from a common superclass nor does it have to implement a specific Java interface. 
+
+There's nevertheless a plugin "interface" JOSM expects a plugin to provide. It consists of a collection of method signatures your plugin may implement. JOSM invokes the corresponding methods at some points in the application life cycle, provided the plugin actually implements these methods. 
+
+ * {{{public void mapFrameInitialized(MapFrame old, MapFrame new)}}} \\
+ JOSM manages at most one [source:/trunk/src/org/openstreetmap/josm/gui/MapFrame.java MapFrame]. At startup, when JOSM displays the Message of the Day (MOTD) panel, the MapFrame is null. It is only created when the first [source:/trunk/src/org/openstreetmap/josm/gui/layer/Layer.java Layer] is added and it is removed and reset to null if the last layer is removed. Plugins implementing a method {{{mapFrameInitialized}}} are notified about the change of the current map frame. 
+  
+ * {{{public PreferenceSetting getPreferenceSetting()}}} \\  
+ The [source:/trunk/src/org/openstreetmap/josm/gui/preferences/PreferenceDialog.java JOSM preference dialog] asks a plugin to supply an editor for its preferences. The editor must implement [source:/trunk/src/org/openstreetmap/josm/gui/preferences/PreferenceSetting.java PreferenceSetting]. Return null from {{{getPreferenceSetting}}} or don't implement it if your plugin has no need to manage preferences. 
+
+ You have basically two choices to implement your preferences editor. The first one is to provide a preferences editor with its own toolbar button in the preferences dialog. To do this, the editor must implement [source:/trunk/src/org/openstreetmap/josm/gui/preferences/TabPreferenceSetting.java TabPreferenceSetting]. The class [source:/trunk/src/org/openstreetmap/josm/gui/preferences/DefaultTabPreferenceSetting.java DefaultTabPreferenceSetting] may help you to achieve this. Alternatively, the editor may plug itself as an additional tab of an existing editor (for example, Display settings). To do this, the editor must implement [source:/trunk/src/org/openstreetmap/josm/gui/preferences/SubPreferenceSetting.java SubPreferenceSetting].
+
+ * {{{public void addDownloadSelection(List<DownloadSelection> list)}}} \\
+ The [source:/trunk/src/org/openstreetmap/josm/gui/download/DownloadDialog.java JOSM download dialog] asks a plugin to supply its own download method when the download dialog is created. The plugin must supply an object implementing [source:/trunk/src/org/openstreetmap/josm/gui/download/DownloadSelection.java DownloadSelection]. The download dialog also invokes {{{addGui(DownloadDialog gui)}}} on the supplied [source:/trunk/src/org/openstreetmap/josm/gui/download/DownloadSelection.java DownloadSelection] which gives you the chance to create an UI component (i.e. a JPanel) JOSM adds to the tabbed pane in the download dialog.  Reply the unmodified {{{list}}} or don't implement the method if your plugin doesn't provide its own download method. Plugins shouldn't remove and or reorder elements in {{{list}}}.
+
+=== The JOSM API ===
+The initial JOSM author preferred public fields in Java classes over public methods, including public getters and setters. He justified this decision as follows:
+
+''First some words about my style of accessing public variables. Most people find this annoying and bad coding style in Java. If this would be an enterprise project, where most of the code is glue code and had to work with objects in a generic way, I would agree with them. But as JOSM is not, I like to keep the classes as simple as possible, which includes, that I don't add standard getter/setter but make the variable public. Also, there are no or very few so-called ''singleton-factories'' in JOSM that became popular in the past years. I use to reference singleton objects as global statics. This is unusual but equivalent to having stuff like Dependency Injection or Factory Methods (except you want to make complex things like auto-distributing stuff as seen in some enterprise programs).''
+
+Most of the current JOSM authors don't follow this approach and in 2008 and 2009 large parts of the JOSM code base have been refactored in order to improve the maintainability and stability of the code. You're encouraged to follow the well-established principles of encapsulation and information hiding in plugins too.
+
+In 2017 The Plugin API was reworked to make the source more modular. [source:/trunk/src/org/openstreetmap/josm/Main.java@14252 Main] object was removed and replaced by other more modular API.  These are some of the new objects:
+
+||MainApplication.getMainFrame()||This is the parent of all GUI elements. Use this as first parameter to JOptionPane.show* if you want to popup a message||
+||Config.getPref()|| This is the global preferences file, loaded from  {{{${josm.home}/preferences}}}. Use {{{Config.getPref().get(key)}}} and {{{Config.getPref().put(key,value)}}} to access the preferences. They will be saved immediately after a put, so don't put anything you dont want to have there. Please, prefix custom plugin preferences with your plugin name. ||
+||Projection||This is the current [source:/trunk/src/org/openstreetmap/josm/data/projection/Projection.java Projection] used in JOSM. If you want to translate between Lat/Lon and East/North, use {{{Projection.latlon2eastnorth}}} and {{{Projection.latlon2eastnorth}}}.||
+||MainApplication.getMap().mapView||This is the main UI component in JOSM to paint the map. You usually access this to call methods like {{{getCenter()}}}, {{{getScale()}}} or {{{zoomTo()}}}. '''Beware''': {{{MainApplication.getMap()}}} can be null when no layers are created yet.||
+||MainApplication.getLayerManager()||This provides you with the list of layers that are currently displayed.||
+
+JOSM plugins can '''register''' for a couple of '''events''' emitted by JOSM. 
+
+ * '''layer change events''' \\
+ Implement a [source:/trunk/src/org/openstreetmap/josm/gui/layer/LayerManager.java LayerChangeListener] and register it using [source:/trunk/src/org/openstreetmap/josm/gui/layer/LayerManager.java#L33 Main.getLayerManager().addLayerChangeListener(LayerChangeListener listener)]. JOSM will then notify you about added, removed, and renamed layers. You may only or also register an [source:/trunk/src/org/openstreetmap/josm/gui/layer/LayerManager.java org.openstreetmap.josm.gui.MapView.ActiveLayerChangeListener] in which case JOSM will notify the plugin about changes in the current edit layer, in particular whether there is or there isn't a current edit layer. 
+
+ * '''selection change listener''' \\
+ If your plugin needs to respond to changes in the currently selected set of OSM objects it can implement a [source:/trunk/src/org/openstreetmap/josm/data/SelectionChangedListener.java org.openstreetmap.josm.data.SelectionChangedListener] and add it to the global list {{{org.openstreetmap.josm.data.osm.DataSet.selListeners}}}. 
+
+ * '''data change events''' \\
+ If your plugin needs to respond to changes in the data managed by [source:/trunk/src/org/openstreetmap/josm/gui/layer/OsmDataLayer.java org.openstreetmap.josm.layer.OsmDataLayer]s it can implement a  [source:/trunk/src/org/openstreetmap/josm/data/osm/event/DataSetListener.java org.openstreetmap.josm.data.osm.event.DataSetListener] and register it on the data set of an OsmDataLayer using {{{layer.ds.addDataSetListener(yourlistener)}}}. JOSM will notify the listener about added, modified, and deleted objects in the dataset. 
+
+ Make sure your plugin also unregisters as data set listener when the respective OsmDataLayer is deleted. Listen to layer change events to and respond to layer deleted events. 
+
+ * ''' preference change listener''' \\
+ If your plugin needs to respond to general changes in the JOSM preferences it can implement a [source:/trunk/src/org/openstreetmap/josm/data/Preferences.java org.openstreetmap.josm.data.Preferences.PreferenceChangedListener]. Invoke {{{addPreferenceChangedListener(PreferenceChangedListener listener)}}} on {{{Main.pref}}}. You are encouraged to use a property object like [source:/trunk/src/org/openstreetmap/josm/data/preferences/IntegerProperty.java IntegerProperty] to access preferences. You can register a listener to that single preference there.
+
+=== Validator plugins ===
+The core validator uses numbers for individual test identification. The reserved ranges documented in the [source:trunk/src/org/openstreetmap/josm/data/validation/OsmValidator.java OsmValidator.java] file, but validator plugins also can have one.
+
+To avoid collision with core, choose numbers above 10000.
+
+=== Accessing the local file system ===
+JOSM plugins are currently allowed to read from and write to the local file system. Please write plugin specific files to `${josm.home}/preferences/${pluginname}`. If your plugin main class subclasses from [source:/trunk/src/org/openstreetmap/josm/plugins/Plugin.java Plugin] you can use the method {{{String getPluginDir()}}} to get the name of the plugin specific data directory.
+
+
+== Packaging a plugin ==
+=== A plugin is deployed as a single jar ===
+A JOSM plugin is deployed as a single **Java 11** jar file. The jar files name must be equal to the plugin name, i.e. {{{routing4all.jar}}}.
+
+The jar file must include 
+ * the required java classes, including any additional libraries the plugin requires
+ * icons (.png or .svg, .svg is preferred), deployed data files, and other resources 
+ * a manifest file with JOSM specific entries (see below)
+
+=== The manifest file for a JOSM plugin ===
+You have to put some information into the manifest file of your jar. If you use ant, you can set these values within the {{{build.xml}}} file.
+
+||'''Plugin-Mainversion'''||required||The lowest JOSM version required by this plugin.||
+||'''Plugin-Version'''||required||The plugin version, for most plugins this is the SVN revision of the plugin SVN repository the plugin was built against||
+||'''Plugin-Class'''||required||Points to the main class of the plugin||
+||'''Plugin-Description'''||required||Gives the description of the plugin visible in the preferences page. For line breaks, you have to use {{{<br>}}}, ''not'' {{{<br/>}}}||
+||'''Author'''||optional||The name and or email address of the author of this plugin. This is used in the error report window, if an error is detected within the plugin code.||
+||'''Plugin-Minimum-Java-Version'''||optional||Integer minimum version of Java required to use this plugin (since r14186).||
+||'''Plugin-Platform'''||optional||Native platform on which this plugin runs. Must be `Windows`, `Osx` or `Unixoid` (since r14384).||
+||'''Plugin-Provides'''||optional||Name of the ''virtual'' plugin provided by this native implementation (since r14384). For example `javafx-windows`, `javafx-osx` and `javafx-unixoid` provide the virtual plugin `javafx`. ||
+||'''Plugin-Date'''||optional||The creation date of the plugin in ISO format.||
+||'''Plugin-Early'''||optional||Can be set to {{{true}}}, in which case the plugin is loaded as early as possible, more specific before the GUI classes are loaded. This is usefull if your plugin alters the GUI or the JOSM-startup process in any way.||
+||'''Plugin-Link'''||optional||Informational URL to a webpage or other information source about that plugin. Is also used in the [wiki:/Plugins plugins] information page.||
+||'''Plugin-Icon'''||optional||The icon to display in the plugin list. The image must be a .png or .svg (.svg is preferred) file and be included in the plugin jar file. Give the full relative path, e.g. {{{images/preferences/plugin.svg}}} \\ The images are collected by a server script in regular intervals. The JOSM clients download the entire [/plugin-icons.zip archive] along with the plugin list.||
+||'''Plugin-Requires'''||optional||A list of other plugins which are required before plugin works. The list is separated by semi colons.||
+||'''Plugin-Stage'''||optional||An number of the order relative to other plugins, when the plugin is loaded. Smaller numbers gets loaded first, so if you have conflicts with other plugins, you can increase or decrease this number to get some control on the loading order. Defaults to 50.||
+||'''Plugin-Canloadatruntime'''||optional||Should be set to {{{true}}} if the plugin can be installed without restart. See [wiki:/DevelopersGuide/PluginInstallationWithoutRestart PluginInstallationWithoutRestart] for details.||
+||'''Class-Path'''||optional||An space-separated list of additional classpaths your plugin wants to use when looking for ressources and classes. The plugin itself is added automatically. Don't forget to provide the additional jar's as well, if you add dependencies here. Note that all loaded plugins are in the class-path automatically, so don't specify plugin-dependencies here.||
+||'''<xxx>_Plugin-Url'''||optional||To support older JOSM versions, special entries may be added to supply older, compatible, versions of the plugin. For plugins maintained in the main plugin subversion repository, this is usually not necessary, since the JOSM server keeps track of compatible versions, when the '''Plugin-Mainversion''' is updated (see section '''Publishing the new plugin''' below). It ''is'' however useful, when the plugin is hosted on a different server, but still available as convenient download from within JOSM. \\ This information will then be used by the internal plugin handler to download a matching plugin version both for the first download and on update. There can be multiple '''<xxx>_Plugin-Url''' entries, the format is ''<josm_version>_Plugin-Url: <plugin_version>;<url>''. Here, ''<josm_version>'' denotes the lowest JOSM version, the plugin ''<plugin_version>'' will work with and it can be downloaded using ''<url>''. ||
+||'''<lang>_Plugin-Description'''||optional||The translated description text for the plugin. E.g. ''de_Plugin-Description'' contains the German translation.||
+
+For SVN managed plugins, the links to old versions and the translated descriptions are automatically added to the [/plugin plugin information], so JOSM can use that when it displays the list of plugins in the preference dialog.
+
+
+== Translating a plugin ==
+JOSM uses a gettext-compatible translation system, but uses its own file format for storing the data. To use the translation feature you need to do following:
+
+* Simply use '''tr()''', '''trn()''', '''trc()''', '''trnc()''', '''marktr()''' like for other gettext based applications. See [source:trunk/src/org/openstreetmap/josm/tools/I18n.java I18n class] for description and lots of examples in other source files.
+* Extract the strings and translate them:
+ * a) Use the normal gettext tools
+  * Extract strings with {{{xgettext -k -ktrc:1c,2 -kmarktrc:1c,2 -ktr -kmarktr -ktrn:1,2 -ktrnc:1c,2,3 ...}}}
+  * Use {{{msgmerge}}} to update translation files
+ * b) Use the ant tools of JOSM translation toolchain, see [source:osm/applications/editors/josm/i18n i18n directory].
+* Create the language files and store them in the plugin file:
+ * Language files are stored in directory "data" of a plugin and named with the lowercase language code with extension '''.lang'''.
+ * These files are always a set. The English base file and the translation files must be created together or they will not work correctly.
+ * The perl script [source:osm/applications/editors/josm/i18n/i18n.pl i18n.pl] must be called with a destination directory and the '''.po''' files to create translation data.
+
+
+== Publishing a plugin ==
+The plugin list a user sees ([/plugin here]) is automatically generated at regular intervals (currently about 10 minutes) from plugin JAR files (**built with Java 11**) that are located in [source:osm/applications/editors/josm/dist/ josm/dist] on the josm.openstreetmap.de SVN repository (referred to as "internal" plugins) and from links that are embedded in the [wiki:/PluginsSource Plugins] page (referred to as "external" plugins). Each method has advantages and disadvantages.
+
+Advantages of hosting code externally:
+* Use VCS other than SVN, such as Git or Mercurial
+* Take advantage of robust features provided by services such as GitHub (forking, pull requests, tickets, change commenting, etc.)
+
+Disadvantages of hosting code externally:
+* Strings are less likely to be [wiki:/Translations translated] due to reduced visibility
+* Changes in the core aren't likely to be propagated to the plugin unless done so by the plugin author(s)
+* Shortcuts won't be listed in [wiki:/DevelopersGuide/ShortcutsList the overview] and thus will very likely be used by others
+* Help pages won't be listed in [wiki:/DevelopersGuide/HelpSystem/HelpTopicsList the help topics list]
+
+Disadvantages of hosting JAR externally:
+* It is marked with "plugin provided by external source" in the JOSM plugin list
+* There is no automatic history handling for older JOSM versions
+
+To support git for development as well as SVN, JOSM has a [https://github.com/JOSM GitHub account]. Plugins developed in that account are treated similar to the ones directly in SVN.
+
+=== Managing a plugin in plugin SVN ===
+There is an SVN repository for JOSM "internal" plugins, see [source:/osm/applications/editors/josm/plugins/ here]. Note that this repository is different from the [source: main JOSM SVN repository] which only manages the JOSM core. 
+
+You can get write access to the JOSM plugins repository by asking in a ticket here. If your plugin should be available for other users too and if you want to integrate it into the JOSM plugin update procedure you should submit it to the JOSM plugins repository. The following [source:/osm/applications/editors/josm/plugins/00_README readme file] might be helpful too.
+
+Managing a plugin in plugin SVN instead of own systems (which is also possible) has some advantages:
+ * Other users can fix bugs and improve the code
+ * Translations are done together with JOSM core and thus reach a larger number of translators
+ * Links for JOSM core compatibility are automatically inserted
+
+==== Updating a plugin in SVN ====
+You have found a bug in a plugin and you are able to fix it. Then your next steps are:
+
+===== Fixing the bug =====
+1. fix the bug in the plugin, compile it, run it locally in JOSM, and test it
+
+===== Publishing the new plugin =====
+1. Did you change something which will not work with every JOSM version? Then you should update '''Plugin-Mainversion''' in {{{build.xml}}}
+ * look for the line {{{<attribute name="Plugin-Mainversion" value="..."/>}}}
+ * replace the value by the lowest JOSM version required for the plugin after you've applied your fix \\ Do not increase '''Plugin-Mainversion''' if not necessary, though. If you do, JOSM ''requires'' users to update to the new version, otherwise users can ''choose'' whether they want to upgrade. {{{Plugin-Mainversion}}} should always consist of the ''lowest possible revision''.
+1. commit the new modified source
+1. '''counter intuitive, but important - update again from the SVN''' - after having commited you '''must''' update the source again from the SVN. This ensures that {{{Plugin-Version}}} in the plugin {{{MANIFEST}}} will reflect the plugins SVN revision number 
+1. build the plugin using {{{ant clean}}} and {{{ant dist}}}. This creates the plugin jar file in the {{{/dist}}} directory.
+1. commit the {{{.jar}}} file in the {{{dist}}} directory
+
+===== Closing trac ticket =====
+1. Did you fix the bug based on a trac ticket? Please close it and leave a note. You can refer to the new plugin version using the macro {{{r12345/osm}}} (use {{{[o12345]}}} if the change is only available on https://trac.openstreetmap.org), where 12345 is a plugin revision number. 
+
+Ready. The new plugin version is now available. If necessary, JOSM asks users to upgrade to the new version, when JOSM is started up.
+
+The steps described above can be automated, see [source:osm/applications/editors/josm/plugins/tageditor/build.xml build.xml of the tageditor plugin]. It includes an ant target {{{publish}}}.
+
+
+== Legal stuff (Imis opinion) ==#LegalStuff
+Just because I have been asked: JOSM is licensed under GPL and if any code is a "derived work" of JOSM, then it has to be under GPL too. It is my belief that any JOSM-Plugin is a derived work of JOSM, so GPL is the only possible license for a JOSM-Plugin. If you want to include non-GPL code into a plugin, it has to be separated from the classes that use JOSM. "Use" as in "import org.openstreetmap.josm...". See the 'Class-Path' - MANIFEST.MF attribute for a way to include other jar files.
+
+----
+Back to [wiki:/DevelopersGuide Developers Guide]
