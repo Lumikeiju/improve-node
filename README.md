@@ -12,4 +12,4 @@ Usage instructions are identical to those of [ImproveWay](https://github.com/JOS
 
 [ImproveWay](https://github.com/JOSM/improve-way) by [András Kolesár](https://github.com/kolesar-andras).
 
-[ImproveNode](https://github.com/Lumikeiju/improve-node) by [Amy Bordenave](https://github.com/Lumi).
+[ImproveNode](https://github.com/Lumikeiju/improve-node) by [Amy Bordenave](https://github.com/Lumikeiju).
